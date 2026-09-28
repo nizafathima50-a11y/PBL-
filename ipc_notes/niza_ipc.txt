@@ -1,0 +1,84 @@
+﻿INTER-PROCESS COMMUNICATION (IPC)
+Part: Pipes and Named Pipes (FIFOs)
+Written by: Niza Fathima 
+
+
+What is IPC?
+Every process runs in its own isolated memory space, so it can't directly read or write another process's data. Inter-Process Communication (IPC) is the set of mechanisms an operating system provides so that processes can exchange data and synchronize their actions, even though they're isolated from each other. IPC is essential for multi-process applications such as  a web browser where separate tabs run as separate processes but still need to coordinate.
+
+
+
+
+1. PIPES (UNNAMED PIPES)
+A pipe is a one-way communication channel between two related processes, usually a parent process and the child process it created.
+
+
+How it works:
+- The operating system creates a small buffer in kernel memory.
+- One end of the pipe is for writing, the other end is for reading.
+- One process writes data into the write end, and the other process reads it from the read end.
+- Data comes out in the same order it went in (FIFO: first in, first out).
+- Once data is read, it is removed from the pipe.
+- In C on Linux/Unix, a pipe is created with the pipe() system call, and the child process is created with fork(). The child inherits the pipe, which is why pipes only work between related processes.
+
+
+Advantages:
+- Very simple to use.
+- Low overhead.
+- Built into every Unix/Linux system.
+
+
+Disadvantages:
+- One-way only. For two-way communication you need two pipes.
+- Only works between related processes (parent and child).
+- Data is temporary. It disappears once read, and the pipe ends when the processes end.
+- Limited buffer size. If the buffer is full, the writer has to wait.
+
+
+Real-world example:
+In a terminal, the command below uses a pipe:
+    ls | grep txt
+The output of "ls" (list of files) is passed through a pipe as the input to "grep", which then shows only the lines containing "txt".
+
+
+
+
+2. NAMED PIPES (FIFOs)
+A named pipe works like a normal pipe, but it has a name and exists as a special file in the file system. Because it has a name, completely unrelated processes can use it to talk to each other.
+
+
+How it works:
+- It is created with the mkfifo command.
+- Any process that knows the file name can open it, one to write and one to read.
+- Data still flows one way and in FIFO order, just like a normal pipe.
+- The pipe file stays in the file system until someone deletes it, but the data inside is not stored permanently.
+
+
+Example (in two terminal windows):
+    Terminal 1:  mkfifo mypipe
+                 echo "Hello from process 1" > mypipe
+    Terminal 2:  cat mypipe
+Terminal 2 will print "Hello from process 1". The two terminals are separate, unrelated processes.
+
+
+Advantages:
+- Works between unrelated processes.
+- Easy to set up, since it is just a file name.
+- Stays available as a file until deleted.
+
+
+Disadvantages:
+- Still one-way for each FIFO. Two-way communication needs two named pipes.
+- Works only on the same machine, not across a network.
+- Blocking problem: a process that opens a FIFO to read will wait until another process opens it to write (and the other way round), which can cause it to hang if the other side never shows up.
+- Slower than shared memory.
+
+
+Real-world example:
+A logging program where several different applications write messages into one named pipe and a single logger process reads them and saves them to a log file.
+
+
+
+
+CONCLUSION
+Pipes are the simplest way for a parent and child process to pass data, while named pipes extend the same idea to unrelated processes by giving the pipe a name in the file system. Both are one-way, work only on a single machine, and are best for simple data flow rather than heavy or two-way communication.
