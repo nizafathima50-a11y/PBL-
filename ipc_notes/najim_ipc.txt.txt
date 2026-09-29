@@ -1,0 +1,90 @@
+INTER-PROCESS COMMUNICATION (IPC)
+PART : SIGNALS + CONCLUSION
+WRITTEN BY : NAJIM RAHMAN N A
+
+What is IPC?
+Every process runs in its own isolated memory space, so it can't directly read or write another process's data. Inter-Process Communication (IPC) is the set of mechanisms an operating system provides so that processes can exchange data and synchronize their actions, even though they're isolated from each other. IPC is essential for multi-process applications — for example, a web browser where separate tabs run as separate processes but still need to coordinate.
+
+
+1. SIGNALS IN IPC
+	
+	A signal is a notification sent to a process to inform it that a particular event has occurred. It is one of the simplest IPC mechanisms.
+	Signals do not normally carry large amounts of data; they mainly act as alerts or notifications.
+	
+	HOW SIGNALS WORKS :
+
+		-An event occurs in the system.
+		-The OS or another process generates a signal.
+		-The signal is sent to the target process.
+		-The process receives the signal.
+		-The process takes the appropriate action.
+		-It can handle, ignore, or use the default action for the signal.
+	
+	COMMON SIGNALS IN LINUX :
+
+		-SIGINT – Interrupts a process (usually Ctrl + C)
+		-SIGTERM – Requests a process to terminate
+		-SIGKILL – Immediately terminates a process
+		-SIGSTOP – Suspends a process
+		-SIGCONT – Resumes a stopped process
+
+	REAL-LIFE EXAMPLES :
+
+		Suppose a program is running continuously.
+
+		If the user presses Ctrl + C:
+
+		Keyboard → Operating System → SIGINT → Running Process
+
+		The process receives the signal and normally stops.
+
+		
+		Another example is when an administrator wants to stop a server:
+
+		Administrator → SIGTERM → Server Process → Server shuts down.
+
+	ADVANTAGES OF SIGNALS :
+
+		-Simple and easy to use.
+		-Fast communication between processes.
+		-Requires very little data to be transferred.
+		-Useful for event notification.
+		-Can be generated automatically by the operating system.
+		-Useful for controlling processes such as start, stop, pause, and terminate.
+
+	DISADVANTAGES OF SIGNALS :
+
+		-Can transfer only limited information.
+		-Not suitable for large amounts of data.
+		-Signal handling can make programs more complex.
+		-Some signals may interrupt the normal execution of a process.
+		-Multiple signals can create synchronization problems if not handled properly.
+		-Signals are less suitable when processes need to exchange detailed data.
+
+	WHEN ARE SIGNALS USED :
+
+	    Signals are mainly used for:
+
+		-Process termination
+		-Process interruption
+		-Process suspension and resumption
+		-Error notification
+		-Event notification
+		-Controlling background processes
+
+	CONCLUSION :
+
+		-Signals are a simple IPC mechanism used to notify processes about events.
+		-They are especially useful for controlling and managing processes.
+		-However, signals are not suitable for transferring large or complex data.
+		-For data exchange, other IPC mechanisms such as pipes, message queues, shared memory, and sockets are more appropriate.
+
+	
+
+
+
+
+
+
+		
+		
