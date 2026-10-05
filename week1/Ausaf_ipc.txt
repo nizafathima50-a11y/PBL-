@@ -1,0 +1,61 @@
+﻿INTER PROCESS COMMUNICATION (IPC)
+PartT:Memory Queues  and Shared Memory
+Written by : Ausaf Hassan
+
+
+What is IPC?
+Every process runs in its own isolated memory space, so it can't directly read or write another process's data. Inter-Process Communication (IPC) is the set of mechanisms an operating system provides so that processes can exchange data and synchronize their actions, even though they're isolated from each other. IPC is essential for multi-process applications 
+— for example, a web browser where separate tabs run as separate processes but still need to 
+  coordinate.
+________________
+
+1. Message Queues
+A message queue is an IPC mechanism where processes communicate by sending and receiving messages through a queue.
+Think of it like a waiting line for messages:
+Process A → Message Queue → Process B
+Process A puts a message into the queue, and Process B takes the message from the queue.
+How it works
+1. A message queue is created by the operating system.
+2. Process A (sender) creates/prepares a message.
+3. Process A places the message into the queue.
+4. The message waits in the queue if Process B isn't ready.
+5. Process B (receiver) reads the message from the queue.
+6. The operating system manages the queue and message delivery.
+
+Advantages
+* Easy way for processes to exchange structured information.
+* Processes can work independently.
+* Messages can remain in the queue until the receiving process is ready.
+* The operating system manages the communication.
+
+Disadvantages
+* Generally slower than shared memory because messages are transferred through the OS.
+* Queue size is limited.
+* There is some overhead when sending and receiving messages.
+________________
+
+2. Shared Memory
+Shared memory is an IPC method where two or more processes are given access to the same region of memory.
+Instead of sending data through the operating system each time, processes can directly read and write to the shared memory area.
+How it works
+Suppose Process A and Process B need to share data:
+Step-by-step
+1. The operating system creates a shared memory region.
+2. Process A attaches/maps this memory into its address space.
+3. Process B also attaches/maps the same memory.
+4. Process A can write data into it.
+5. Process B can read that data directly.
+6. Synchronization mechanisms such as semaphores or mutexes may be needed to prevent both processes from modifying the data at the same time.
+
+Advantages
+* Very fast IPC method.
+* Suitable for transferring large amounts of data.
+* Processes can directly access the shared data.
+* Less data copying compared with message queues.
+
+Disadvantages
+* More difficult to manage correctly.
+* Synchronization is required when multiple processes access the same data.
+* Incorrect synchronization can cause race conditions.
+* Processes must carefully coordinate who reads/writes the data.
+________________

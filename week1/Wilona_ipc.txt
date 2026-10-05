@@ -1,0 +1,117 @@
+INTER-PROCESS COMMUNICATION (IPC)
+Part: Semaphores and Sockets
+Written by: Wilona Alvares
+
+
+-What is IPC?
+ Every process runs in its own isolated memory space, so it can't directly read or write      another process's data. Inter-Process Communication (IPC) is the set of mechanisms an operating system provides so that processes can exchange data and synchronize their actions, even though they're isolated from each other. IPC is essential for multi-process applications — for example, a web browser where separate tabs run as separate processes but still need to coordinate.
+
+
+1] Semaphore:
+ A semaphore is a synchronization mechanism used to control access to shared resources by multiple processes.
+
+How it Works :
+> A semaphore keeps a value/count.
+> A process uses wait() before using a shared resource.
+> If the resource is available, the process gets permission and the semaphore value       decreases.
+> If it is not available, the process waits.
+> After using the resource, the process calls signal().
+> The semaphore value increases, allowing another waiting process to access the resource.
+
+Types: 
+1.Binary Semaphore : 
+> Value is usually 0 or 1
+> Allows only one process at a time
+> Similar to a lock
+
+2.Counting Semaphore : 
+> Value can be greater than 1
+> Allows a limited number of processes
+Example:
+Suppose there are 3 printers.
+
+Advantages:
+> Prevents race conditions.
+> Helps synchronize processes.
+> Controls access to shared resources.
+> Useful when multiple processes need to share limited resources.
+
+Disadvantages:
+> Incorrect use can cause deadlock.
+> A process may wait indefinitely if the semaphore is never released.
+> More difficult to manage than simple IPC methods.
+> Does not itself transfer data between processes.
+
+Real-world example:
+
+Consider a parking lot with 5 parking spaces.
+A counting semaphore can be initialized to 5.
+
+When a car enters → semaphore decreases by 1.
+When a car leaves → semaphore increases by 1.
+When the value becomes 0 → new cars must wait until a space becomes available.
+
+
+
+2] Sockets:
+A socket is used to communicate between two processes.
+
+Sockets can allow processes to communicate on the same computer or across different computers through a network.
+They are commonly used in client-server communication.
+
+
+How it works:
+
+By Server:
+> A server creates a socket.
+> The server binds the socket to an IP address and port number.
+> The server waits for a client using listen().
+
+By Client : 
+> A client creates its own socket and connects to the server.
+> The connection is established.
+> Both processes can send and receive data.
+> After communication is complete, the connection is closed.
+
+Types:
+
+1. Stream Socket (TCP)
+> Provides reliable communication.
+> Data arrives in the correct order.
+> Connection-oriented.
+> Used for applications such as web communication.
+
+2. Datagram Socket (UDP)
+> Sends independent packets called datagrams.
+> Faster but does not guarantee delivery or order.
+> Connectionless.
+
+Advantages:
+> Can communicate between unrelated processes.
+> Can work between different computers.
+> Supports two-way communication.
+> Useful for client-server applications.
+> Works over networks.
+
+Disadvantages:
+> More complex than pipes.
+> Network communication can introduce delays.
+> Data can be affected by network failures.
+> Requires handling of connections, addresses and ports.
+
+Real-world example:
+A web browser and web server communicate using sockets.
+
+For example:
+
+Browser → Request → Server
+Server → Response → Browser
+
+The socket provides the communication endpoint through which this data is exchanged.
+
+
+
+
+
+
+
