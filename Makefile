@@ -1,24 +1,27 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -std=c99 -D_POSIX_C_SOURCE=200809L
-LIBS = -lrt
+LDFLAGS = -lrt
 
-all: logger core ui launcher standalone
+SRC_DIR = src
 
-logger: Ausaf_log.c
-	$(CC) $(CFLAGS) Ausaf_log.c -o logger $(LIBS)
+ALL = logger core ui launcher standalone
 
-core: wilona_core.c
-	$(CC) $(CFLAGS) wilona_core.c -o core $(LIBS)
+all: $(ALL)
 
-ui: najim_ui.c
-	$(CC) $(CFLAGS) najim_ui.c -o ui $(LIBS)
+logger: $(SRC_DIR)/Ausaf_log.c
+	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
+
+core: $(SRC_DIR)/wilona_core.c
+	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
+
+ui: $(SRC_DIR)/najim_ui.c
+	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
 
 launcher: launcher.c
-	$(CC) $(CFLAGS) launcher.c -o launcher $(LIBS)
+	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
 
-standalone: standalone.c
-	$(CC) $(CFLAGS) standalone.c -o standalone
+standalone: $(SRC_DIR)/standalone.c
+	$(CC) $(CFLAGS) $< -o $@
 
 clean:
-	rm -f logger core ui launcher standalone *.log
-	-ipcrm -a
+	rm -f $(ALL) *.log
