@@ -846,7 +846,7 @@ int main(void)
 
         send_log(
             log_queue,
-            log_messageg
+            log_message
         );
     }
 

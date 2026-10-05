@@ -2,7 +2,8 @@ CC = gcc
 CFLAGS = -Wall -Wextra -std=c99 -D_POSIX_C_SOURCE=200809L
 LDFLAGS = -lrt
 
-SRC_DIR = src
+WEEK2_DIR = week2
+SRC_DIR = week2/src
 
 ALL = logger core ui launcher standalone
 
@@ -17,7 +18,7 @@ core: $(SRC_DIR)/wilona_core.c
 ui: $(SRC_DIR)/najim_ui.c
 	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
 
-launcher: launcher.c
+launcher: $(WEEK2_DIR)/launcher.c
 	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
 
 standalone: $(SRC_DIR)/standalone.c
