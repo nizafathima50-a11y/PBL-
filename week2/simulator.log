@@ -1,0 +1,5 @@
+ADD 20 10 = 30
+Core shutting down
+MUL 5 6 = 30
+ERROR: Division by zero
+Core shutting down

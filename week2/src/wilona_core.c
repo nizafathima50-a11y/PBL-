@@ -270,7 +270,7 @@ int main(void)
 
     printf("\n");
     printf("====================================\n");
-    printf("         RISCbodchi CORE\n");
+    printf("         SusurKaddi CORE\n");
     printf("====================================\n");
 
     printf("CPU     : READY\n");
@@ -846,7 +846,7 @@ int main(void)
 
         send_log(
             log_queue,
-            log_messageg
+            log_message
         );
     }
 
