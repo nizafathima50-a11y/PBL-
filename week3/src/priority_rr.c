@@ -1,4 +1,4 @@
-```c
+
 #include <stdio.h>
 #include "scheduler.h"
 
@@ -121,4 +121,3 @@ void run_rr(Process p[], int n, int quantum,
         }
     }
 }
-```
