@@ -222,11 +222,13 @@ int main(void)
                 count = detect_deadlock(&state, deadlocked);
 
                 if (count < 0) {
-                    printf("Deadlock detection could not be completed.\n");
+                    printf("Feasibility check could not be completed.\n");
                 } else if (count == 0) {
-                    printf("No deadlocked processes detected.\n");
+                    printf("All processes can finish under the "
+                           "need-based feasibility check.\n");
                 } else {
-                    printf("Deadlocked processes: ");
+                    printf("Processes unable to finish under the "
+                           "need-based feasibility check: ");
 
                     for (int i = 0; i < state.process_count; i++) {
                         if (deadlocked[i]) {
@@ -269,7 +271,10 @@ int main(void)
                         printf("Resource data updated.\n");
                     }
                 } else {
-                    printf("Recovery failed for P%d.\n", process_id);
+                    printf("Recovery not performed for P%d. The process "
+                           "must be unable to finish under the need-based "
+                           "check and hold allocated resources.\n",
+                           process_id);
                 }
 
                 break;
@@ -328,8 +333,9 @@ int main(void)
                 deadlock_count = detect_deadlock(&state, deadlocked);
 
                 if (deadlock_count > 0) {
-                    printf("System status: DEADLOCKED "
-                           "(according to the detection module).\n");
+                    printf("System status: UNSAFE under the need-based "
+                           "feasibility check; this does not prove a "
+                           "runtime deadlock.\n");
                 } else if (check_safe_state(&state, safe_sequence)) {
                     printf("System status: SAFE.\n");
                 } else {

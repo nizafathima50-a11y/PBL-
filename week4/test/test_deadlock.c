@@ -24,6 +24,9 @@ static void test_no_deadlock(void)
 
     assert(detect_deadlock(&state, deadlocked) == 0);
     assert(!deadlocked[0] && !deadlocked[1]);
+    assert(!recover_from_deadlock(&state, 0));
+    assert(state.allocation[0][0] == 1);
+    assert(state.allocation[1][0] == 1);
 }
 
 static void test_need_based_feasibility_failure(void)
@@ -72,6 +75,7 @@ static void test_recovery_releases_resources(void)
     state.maximum[1][0] = 2;
     assert(calculate_need(&state));
     assert(state.available[0] == 0);
+    assert(detect_deadlock(&state, (bool[MAX_PROCESSES]){false}) == 2);
 
     assert(recover_from_deadlock(&state, 0));
     assert(state.allocation[0][0] == 0);
