@@ -244,7 +244,6 @@ int main(void)
                 int count = detect_deadlock(&state, deadlocked);
 
                 if (count < 0) {
-                if (count < 0) {
                     printf("Feasibility check could not be completed.\n");
                 } else if (count == 0) {
                     printf("All processes can finish under the "
@@ -294,7 +293,6 @@ int main(void)
                     printf("Recovery not performed for P%d. The process "
                            "must be unable to finish under the need-based "
                            "check and hold allocated resources.\n",
-                           process_id);
                            process_id);
                 }
                 break;
@@ -352,11 +350,6 @@ int main(void)
                     printf("System status: UNSAFE under the need-based "
                            "feasibility check; this does not prove a "
                            "runtime deadlock.\n");
-                } else if (check_safe_state(&state, safe_sequence)) {
-                    printf("System status: SAFE.\n");
-                } else {
-                    printf("System status: UNSAFE.\n");
-                }
                 } else if (check_safe_state(&state, safe_sequence)) {
                     printf("System status: SAFE.\n");
                 } else {
