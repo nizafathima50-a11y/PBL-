@@ -16,6 +16,7 @@ typedef struct {
     int allocation[MAX_PROCESSES][MAX_RESOURCES];
     int maximum[MAX_PROCESSES][MAX_RESOURCES];
     int need[MAX_PROCESSES][MAX_RESOURCES];
+    int request[MAX_PROCESSES][MAX_RESOURCES];
 } SystemState;
 
 typedef struct {

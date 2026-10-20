@@ -1,7 +1,11 @@
+
 #include "deadlock.h"
 
 #include <stddef.h>
 
+/*
+ * Validate the resource state and current outstanding requests.
+ */
 static bool valid_state(const SystemState *state)
 {
     if (state == NULL ||
@@ -24,26 +28,47 @@ static bool valid_state(const SystemState *state)
         for (int j = 0; j < state->resource_count; j++) {
             int allocation = state->allocation[i][j];
             int maximum = state->maximum[i][j];
+            int request = state->request[i][j];
 
-            if (allocation < 0 || maximum < 0 || allocation > maximum ||
-                allocation > state->total[j] - allocated[j]) {
+            if (allocation < 0 ||
+                maximum < 0 ||
+                request < 0 ||
+                allocation > maximum ||
+                request > state->total[j]) {
                 return false;
             }
 
             allocated[j] += allocation;
+
+            if (allocated[j] > state->total[j]) {
+                return false;
+            }
         }
     }
 
     return true;
 }
 
+/*
+ * Deadlock detection algorithm:
+ * 1. Work = Available.
+ * 2. Processes holding no resources are initially finished.
+ * 3. Find an unfinished process whose current request <= Work.
+ * 4. Assume it finishes and releases its allocation.
+ * 5. Any process still unfinished is deadlocked.
+ *
+ * Returns:
+ *   -1 = invalid state
+ *    0 = no deadlocked processes
+ *   >0 = number of deadlocked processes
+ */
 int detect_deadlock(
     SystemState *state,
     bool deadlocked[MAX_PROCESSES]
 )
 {
     if (deadlocked == NULL) {
-        return 0;
+        return -1;
     }
 
     for (int i = 0; i < MAX_PROCESSES; i++) {
@@ -51,7 +76,7 @@ int detect_deadlock(
     }
 
     if (!valid_state(state) || !calculate_need(state)) {
-        return 0;
+        return -1;
     }
 
     int work[MAX_RESOURCES] = {0};
@@ -61,7 +86,25 @@ int detect_deadlock(
         work[j] = state->available[j];
     }
 
+    /*
+     * A process holding no resources cannot be part of a
+     * resource-allocation deadlock under this algorithm.
+     */
+    for (int i = 0; i < state->process_count; i++) {
+        bool holds_resources = false;
+
+        for (int j = 0; j < state->resource_count; j++) {
+            if (state->allocation[i][j] > 0) {
+                holds_resources = true;
+                break;
+            }
+        }
+
+        finished[i] = !holds_resources;
+    }
+
     bool progress;
+
     do {
         progress = false;
 
@@ -71,34 +114,44 @@ int detect_deadlock(
             }
 
             bool can_finish = true;
+
             for (int j = 0; j < state->resource_count; j++) {
-                if (state->need[i][j] > work[j]) {
+                if (state->request[i][j] > work[j]) {
                     can_finish = false;
                     break;
                 }
             }
 
-            if (can_finish) {
-                for (int j = 0; j < state->resource_count; j++) {
-                    work[j] += state->allocation[i][j];
-                }
-                finished[i] = true;
-                progress = true;
+            if (!can_finish) {
+                continue;
             }
+
+            for (int j = 0; j < state->resource_count; j++) {
+                work[j] += state->allocation[i][j];
+            }
+
+            finished[i] = true;
+            progress = true;
         }
     } while (progress);
 
-    int unable_to_finish = 0;
+    int count = 0;
+
     for (int i = 0; i < state->process_count; i++) {
         if (!finished[i]) {
             deadlocked[i] = true;
-            unable_to_finish++;
+            count++;
         }
     }
 
-    return unable_to_finish;
+    return count;
 }
 
+/*
+ * Recover only if the selected process is currently deadlocked.
+ * Recovery releases its allocated resources and clears its
+ * outstanding request.
+ */
 bool recover_from_deadlock(
     SystemState *state,
     int process_id
@@ -110,13 +163,16 @@ bool recover_from_deadlock(
         return false;
     }
 
-    bool unable_to_finish[MAX_PROCESSES];
-    if (detect_deadlock(state, unable_to_finish) == 0 ||
-        !unable_to_finish[process_id]) {
+    bool deadlocked[MAX_PROCESSES] = {false};
+
+    int count = detect_deadlock(state, deadlocked);
+
+    if (count <= 0 || !deadlocked[process_id]) {
         return false;
     }
 
     bool holds_resources = false;
+
     for (int j = 0; j < state->resource_count; j++) {
         if (state->allocation[process_id][j] > 0) {
             holds_resources = true;
@@ -130,7 +186,9 @@ bool recover_from_deadlock(
 
     for (int j = 0; j < state->resource_count; j++) {
         state->allocation[process_id][j] = 0;
+        state->request[process_id][j] = 0;
     }
 
     return calculate_need(state);
 }
+
