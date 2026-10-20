@@ -110,6 +110,12 @@ bool recover_from_deadlock(
         return false;
     }
 
+    bool unable_to_finish[MAX_PROCESSES];
+    if (detect_deadlock(state, unable_to_finish) == 0 ||
+        !unable_to_finish[process_id]) {
+        return false;
+    }
+
     bool holds_resources = false;
     for (int j = 0; j < state->resource_count; j++) {
         if (state->allocation[process_id][j] > 0) {
