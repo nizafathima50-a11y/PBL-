@@ -3,17 +3,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include "fifo.h"
 
-#define MAX_REF 200
-#define MAX_FRAMES 20
 #define OUT_SIZE 50000
-
-typedef enum { FIFO = 0, LRU = 1, OPTIMAL = 2 } Algorithm;
-
-typedef struct {
-    int n, f, refs[MAX_REF], frames[MAX_REF][MAX_FRAMES], hit[MAX_REF];
-    int hits, faults;
-} Result;
 
 typedef struct {
     GtkWidget *pages, *frame_count, *algorithm, *output;
@@ -44,10 +36,13 @@ static int parse_refs(const char *s, int out[], int *n) {
 }
 
 static int simulate(const int refs[], int n, int f, int algorithm, Result *r) {
-    int frame[MAX_FRAMES], last[MAX_FRAMES], inserted[MAX_FRAMES], i, j;
+    int frame[MAX_FRAMES], last[MAX_FRAMES], i, j;
+
+    if (algorithm == FIFO) return fifo_simulate(refs, n, f, r);
     if (!refs || !r || n < 1 || n > MAX_REF || f < 1 || f > MAX_FRAMES) return 0;
+    if (algorithm != LRU && algorithm != OPTIMAL) return 0;
     r->n = n; r->f = f; r->hits = 0; r->faults = 0;
-    for (j = 0; j < f; j++) { frame[j] = -1; last[j] = -1; inserted[j] = -1; }
+    for (j = 0; j < f; j++) { frame[j] = -1; last[j] = -1; }
 
     for (i = 0; i < n; i++) {
         int found = 0, slot = -1;
@@ -64,12 +59,7 @@ static int simulate(const int refs[], int n, int f, int algorithm, Result *r) {
             r->faults++;
             for (j = 0; j < f; j++) if (frame[j] == -1) { empty = j; break; }
             if (empty >= 0) slot = empty;
-            else if (algorithm == FIFO) {
-                /* FIFO replaces the page that entered memory earliest. */
-                slot = 0;
-                for (j = 1; j < f; j++)
-                    if (inserted[j] < inserted[slot]) slot = j;
-            } else if (algorithm == LRU) {
+            else if (algorithm == LRU) {
                 slot = 0;
                 for (j = 1; j < f; j++) if (last[j] < last[slot]) slot = j;
             } else {
@@ -84,7 +74,6 @@ static int simulate(const int refs[], int n, int f, int algorithm, Result *r) {
             }
             frame[slot] = refs[i];
             last[slot] = i;
-            inserted[slot] = i;
         }
         for (j = 0; j < f; j++) r->frames[i][j] = frame[j];
     }
