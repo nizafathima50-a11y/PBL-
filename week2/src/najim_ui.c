@@ -1,52 +1,127 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <mqueue.h>
-#include <fcntl.h>
-#include <sys/stat.h>
+#include <errno.h>
+#include <signal.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
 
-#define REQUEST_QUEUE  "/susurkaddi_request"
-#define RESPONSE_QUEUE "/susurkaddi_response"
+#define CORE_SOCKET_PATH "/tmp/susurkaddi_core.sock"
 
 #define MAX_MSG_SIZE 256
 
+int send_frame(int socket_fd, const char *message)
+{
+    char frame[MAX_MSG_SIZE] = {0};
+    size_t message_length = strlen(message);
+
+    if (message_length >= sizeof(frame))
+    {
+        message_length = sizeof(frame) - 1;
+    }
+
+    memcpy(frame, message, message_length);
+
+    size_t sent = 0;
+    while (sent < sizeof(frame))
+    {
+        ssize_t bytes = send(
+            socket_fd,
+            frame + sent,
+            sizeof(frame) - sent,
+            0
+        );
+
+        if (bytes == -1)
+        {
+            if (errno == EINTR)
+            {
+                continue;
+            }
+
+            return -1;
+        }
+
+        if (bytes == 0)
+        {
+            errno = EPIPE;
+            return -1;
+        }
+
+        sent += (size_t)bytes;
+    }
+
+    return 0;
+}
+
+int receive_frame(int socket_fd, char *buffer, size_t buffer_size)
+{
+    size_t received = 0;
+
+    while (received < buffer_size)
+    {
+        ssize_t bytes = recv(
+            socket_fd,
+            buffer + received,
+            buffer_size - received,
+            0
+        );
+
+        if (bytes == 0)
+        {
+            if (received == 0)
+            {
+                return 0;
+            }
+
+            errno = ECONNRESET;
+            return -1;
+        }
+
+        if (bytes == -1)
+        {
+            if (errno == EINTR)
+            {
+                continue;
+            }
+
+            return -1;
+        }
+
+        received += (size_t)bytes;
+    }
+
+    buffer[buffer_size - 1] = '\0';
+    return 1;
+}
 
 int main(void)
 {
-    /* =========================
-       CONNECT TO REQUEST QUEUE
-       ========================= */
+    signal(SIGPIPE, SIG_IGN);
 
-    mqd_t request_queue = mq_open(
-        REQUEST_QUEUE,
-        O_WRONLY
-    );
+    int core_socket = socket(AF_UNIX, SOCK_STREAM, 0);
 
-    if (request_queue == (mqd_t)-1)
+    if (core_socket == -1)
     {
-        perror("UI: Cannot connect to Core");
-
-        printf("UI: Make sure CORE is running first.\n");
-
+        perror("UI: Cannot create socket");
         return 1;
     }
 
+    struct sockaddr_un socket_address;
+    memset(&socket_address, 0, sizeof(socket_address));
+    socket_address.sun_family = AF_UNIX;
+    strcpy(socket_address.sun_path, CORE_SOCKET_PATH);
 
-    /* =========================
-       CONNECT TO RESPONSE QUEUE
-       ========================= */
-
-    mqd_t response_queue = mq_open(
-        RESPONSE_QUEUE,
-        O_RDONLY
-    );
-
-    if (response_queue == (mqd_t)-1)
+    if (connect(
+        core_socket,
+        (struct sockaddr *)&socket_address,
+        sizeof(socket_address)
+    ) == -1)
     {
-        perror("UI: Cannot connect to response queue");
-
-        mq_close(request_queue);
-
+        perror("UI: Cannot connect to Core");
+        printf("UI: Make sure CORE is running first.\n");
+        close(core_socket);
         return 1;
     }
 
@@ -125,12 +200,7 @@ int main(void)
            SEND COMMAND TO CORE
            ========================= */
 
-        if (mq_send(
-            request_queue,
-            message,
-            strlen(message) + 1,
-            0
-        ) == -1)
+        if (send_frame(core_socket, message) == -1)
         {
             perror("UI: Failed to send command");
             break;
@@ -141,21 +211,23 @@ int main(void)
            WAIT FOR CORE RESPONSE
            ========================= */
 
-        ssize_t bytes = mq_receive(
-            response_queue,
+        int frame_status = receive_frame(
+            core_socket,
             response,
-            MAX_MSG_SIZE,
-            NULL
+            sizeof(response)
         );
 
-        if (bytes == -1)
+        if (frame_status == -1)
         {
             perror("UI: Failed to receive response");
             break;
         }
 
-
-        response[bytes] = '\0';
+        if (frame_status == 0)
+        {
+            printf("UI: Core disconnected.\n");
+            break;
+        }
 
 
         printf("CORE: %s\n", response);
@@ -176,8 +248,7 @@ int main(void)
        CLEANUP
        ========================= */
 
-    mq_close(request_queue);
-    mq_close(response_queue);
+    close(core_socket);
 
     printf("\nUI: Shutdown complete.\n");
 

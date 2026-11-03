@@ -2,7 +2,8 @@
 
 ## What we did
 Split our simulator into three separate processes (UI, Core, Logger) that
-communicate using POSIX Message Queues instead of running as one program.
+communicate using local sockets and a POSIX Message Queue instead of running as
+one program.
 
 ## Team Roles
 | Member | Role | File |
@@ -13,8 +14,9 @@ communicate using POSIX Message Queues instead of running as one program.
 | Niza | Team Leader — Integration | `launcher.c`, `Makefile`, `benchmark.sh` |
 
 ## IPC Mechanism
-POSIX Message Queues. UI sends commands to Core, Core processes them and sends
-results to Logger, Logger saves everything to `simulator.log` with a timestamp.
+The UI sends commands to Core over a Unix-domain stream socket. Core sends log
+messages to Logger over a POSIX Message Queue, and Logger saves them to
+`simulator.log`.
 
 ## Commands Supported
 `ADD x y`, `SUB x y`, `MUL x y`, `DIV x y`, `PUSH value`, `POP`,
