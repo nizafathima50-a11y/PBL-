@@ -3,3 +3,17 @@ Core shutting down
 MUL 5 6 = 30
 ERROR: Division by zero
 Core shutting down
+ADD 2 3 = 5
+MUL 5 2 = 10
+SUB 2 6 = -4
+DIV 2 4 = 0
+ERROR: Division by zero
+Core shutting down
+Core shutting down
+ADD 2 3 = 5
+SUB 2 5 = -3
+MUL 3 4 = 12
+ERROR: Unknown command -> MUL 2.3 4
+DIV 2 4 = 0.5
+ERROR: Division by zero
+Core shutting down

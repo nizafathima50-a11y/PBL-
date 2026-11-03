@@ -1,47 +1,81 @@
+#include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <mqueue.h>
-#include <fcntl.h>
-#include <sys/stat.h>
+#include <unistd.h>
 
-#define LOG_QUEUE "/susurkaddi_log"
 #define MAX_MSG_SIZE 256
 
-int main(void)
+static int read_frame(int pipe_fd, char *message)
 {
-    struct mq_attr attr;
+    size_t received = 0;
 
-    attr.mq_flags = 0;
-    attr.mq_maxmsg = 10;
-    attr.mq_msgsize = MAX_MSG_SIZE;
-    attr.mq_curmsgs = 0;
-
-    // Remove old queue so it gets recreated with the correct size
-    mq_unlink(LOG_QUEUE);
-
-    mqd_t log_queue = mq_open(
-        LOG_QUEUE,
-        O_CREAT | O_RDONLY,
-        0666,
-        &attr
-    );
-
-    if (log_queue == (mqd_t)-1)
+    while (received < MAX_MSG_SIZE)
     {
-        perror("LOGGER: mq_open");
+        ssize_t bytes = read(
+            pipe_fd,
+            message + received,
+            MAX_MSG_SIZE - received
+        );
+
+        if (bytes == 0)
+        {
+            if (received == 0)
+            {
+                return 0;
+            }
+
+            errno = EPIPE;
+            return -1;
+        }
+
+        if (bytes == -1)
+        {
+            if (errno == EINTR)
+            {
+                continue;
+            }
+
+            return -1;
+        }
+
+        received += (size_t)bytes;
+    }
+
+    message[MAX_MSG_SIZE - 1] = '\0';
+    return 1;
+}
+
+int main(int argc, char **argv)
+{
+    if (argc != 2)
+    {
+        fprintf(stderr, "LOGGER: Usage: %s <pipe-read-fd>\n", argv[0]);
         return 1;
     }
 
-    FILE *log_file = fopen("simulator.log", "a");
+    char *end;
+    errno = 0;
+    long pipe_fd_value = strtol(argv[1], &end, 10);
+    if (
+        errno != 0 ||
+        end == argv[1] ||
+        *end != '\0' ||
+        pipe_fd_value < 0 ||
+        pipe_fd_value > INT_MAX
+    )
+    {
+        fprintf(stderr, "LOGGER: Invalid pipe descriptor\n");
+        return 1;
+    }
+    int pipe_fd = (int)pipe_fd_value;
 
+    FILE *log_file = fopen("simulator.log", "a");
     if (log_file == NULL)
     {
         perror("LOGGER: fopen");
-
-        mq_close(log_queue);
-        mq_unlink(LOG_QUEUE);
-
+        close(pipe_fd);
         return 1;
     }
 
@@ -52,28 +86,18 @@ int main(void)
     printf("LOGGER: Waiting for messages...\n");
 
     char message[MAX_MSG_SIZE];
-
-    while (1)
+    int read_status;
+    while ((read_status = read_frame(pipe_fd, message)) == 1)
     {
-        ssize_t bytes = mq_receive(
-            log_queue,
-            message,
-            MAX_MSG_SIZE,
-            NULL
-        );
-
-        if (bytes == -1)
-        {
-            perror("LOGGER: mq_receive");
-            break;
-        }
-
-        message[bytes] = '\0';
-
         printf("LOG: %s\n", message);
 
-        fprintf(log_file, "%s\n", message);
-        fflush(log_file);
+        if (fprintf(log_file, "%s\n", message) < 0 || fflush(log_file) == EOF)
+        {
+            perror("LOGGER: writing log");
+            fclose(log_file);
+            close(pipe_fd);
+            return 1;
+        }
 
         if (strcmp(message, "Core shutting down") == 0)
         {
@@ -81,12 +105,17 @@ int main(void)
         }
     }
 
-    fclose(log_file);
+    if (read_status == -1)
+    {
+        perror("LOGGER: reading pipe");
+        fclose(log_file);
+        close(pipe_fd);
+        return 1;
+    }
 
-    mq_close(log_queue);
-    mq_unlink(LOG_QUEUE);
+    fclose(log_file);
+    close(pipe_fd);
 
     printf("LOGGER: Shutdown complete.\n");
-
     return 0;
 }

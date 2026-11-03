@@ -4,16 +4,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <limits.h>
 #include <signal.h>
-#include <mqueue.h>
-#include <fcntl.h>
-#include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
 
 #define CORE_SOCKET_PATH "/tmp/susurkaddi_core.sock"
-#define LOG_QUEUE      "/susurkaddi_log"
 
 #define MAX_MSG_SIZE 256
 
@@ -130,14 +127,14 @@ int cpu_mul(int a, int b)
     return a * b;
 }
 
-int cpu_div(int a, int b)
+float cpu_div(int a, int b)
 {
     if (b == 0)
     {
         return 0;
     }
 
-    return a / b;
+    return (float)a / b;
 }
 
 
@@ -243,19 +240,39 @@ void send_response(int response_socket, const char *message)
    SEND LOG TO LOGGER
    ========================= */
 
-void send_log(
-    mqd_t log_queue,
-    const char *message
-)
+void send_log(int log_fd, const char *message)
 {
-    if (mq_send(
-        log_queue,
-        message,
-        strlen(message) + 1,
-        0
-    ) == -1)
+    char frame[MAX_MSG_SIZE] = {0};
+    size_t message_length = strlen(message);
+    if (message_length >= sizeof(frame))
     {
-        perror("CORE: Failed to send log");
+        message_length = sizeof(frame) - 1;
+    }
+    memcpy(frame, message, message_length);
+
+    size_t sent = 0;
+    while (sent < sizeof(frame))
+    {
+        ssize_t bytes = write(log_fd, frame + sent, sizeof(frame) - sent);
+        if (bytes == -1)
+        {
+            if (errno == EINTR)
+            {
+                continue;
+            }
+
+            perror("CORE: Failed to send log");
+            return;
+        }
+
+        if (bytes == 0)
+        {
+            errno = EPIPE;
+            perror("CORE: Failed to send log");
+            return;
+        }
+
+        sent += (size_t)bytes;
     }
 }
 
@@ -264,8 +281,31 @@ void send_log(
    MAIN
    ========================= */
 
-int main(void)
+int main(int argc, char **argv)
 {
+    if (argc != 2)
+    {
+        fprintf(stderr, "CORE: Usage: %s <pipe-write-fd>\n", argv[0]);
+        return 1;
+    }
+
+    char *end;
+    errno = 0;
+    long log_fd_value = strtol(argv[1], &end, 10);
+    if (
+        errno != 0 ||
+        end == argv[1] ||
+        *end != '\0' ||
+        log_fd_value < 0 ||
+        log_fd_value > INT_MAX
+    )
+    {
+        fprintf(stderr, "CORE: Invalid pipe descriptor\n");
+        return 1;
+    }
+
+    int log_fd = (int)log_fd_value;
+
     int server_socket = socket(AF_UNIX, SOCK_STREAM, 0);
 
     if (server_socket == -1)
@@ -314,23 +354,6 @@ int main(void)
        CONNECT TO LOGGER
        ========================= */
 
-    mqd_t log_queue = mq_open(
-        LOG_QUEUE,
-        O_WRONLY
-    );
-
-    if (log_queue == (mqd_t)-1)
-    {
-        perror("CORE: Cannot connect to logger");
-
-        printf("CORE: Make sure LOGGER is running first.\n");
-
-        close(server_socket);
-        unlink(CORE_SOCKET_PATH);
-
-        return 1;
-    }
-
     signal(SIGPIPE, SIG_IGN);
 
 
@@ -358,7 +381,7 @@ int main(void)
     if (ui_socket == -1)
     {
         perror("CORE: Failed to accept UI connection");
-        mq_close(log_queue);
+        close(log_fd);
         close(server_socket);
         unlink(CORE_SOCKET_PATH);
         return 1;
@@ -412,7 +435,7 @@ int main(void)
             );
 
             send_log(
-                log_queue,
+                log_fd,
                 "Core shutting down"
             );
 
@@ -464,7 +487,7 @@ int main(void)
             );
 
             send_log(
-                log_queue,
+                log_fd,
                 log_message
             );
 
@@ -512,7 +535,7 @@ int main(void)
             );
 
             send_log(
-                log_queue,
+                log_fd,
                 log_message
             );
 
@@ -560,7 +583,7 @@ int main(void)
             );
 
             send_log(
-                log_queue,
+                log_fd,
                 log_message
             );
 
@@ -587,20 +610,20 @@ int main(void)
                 );
 
                 send_log(
-                    log_queue,
+                    log_fd,
                     "ERROR: Division by zero"
                 );
             }
             else
             {
-                int result = cpu_div(a, b);
+                float result = cpu_div(a, b);
 
                 char response[MAX_MSG_SIZE];
 
                 snprintf(
                     response,
                     sizeof(response),
-                    "DIV result = %d",
+                    "DIV result = %g",
                     result
                 );
 
@@ -615,14 +638,14 @@ int main(void)
                 snprintf(
                     log_message,
                     sizeof(log_message),
-                    "DIV %d %d = %d",
+                    "DIV %d %d = %g",
                     a,
                     b,
                     result
                 );
 
                 send_log(
-                    log_queue,
+                    log_fd,
                     log_message
                 );
             }
@@ -662,7 +685,7 @@ int main(void)
             );
 
             send_log(
-                log_queue,
+                log_fd,
                 log_message
             );
 
@@ -703,7 +726,7 @@ int main(void)
             );
 
             send_log(
-                log_queue,
+                log_fd,
                 log_message
             );
 
@@ -739,7 +762,7 @@ int main(void)
             );
 
             send_log(
-                log_queue,
+                log_fd,
                 log_message
             );
 
@@ -780,7 +803,7 @@ int main(void)
             );
 
             send_log(
-                log_queue,
+                log_fd,
                 log_message
             );
 
@@ -826,7 +849,7 @@ int main(void)
                 );
 
                 send_log(
-                    log_queue,
+                    log_fd,
                     log_message
                 );
             }
@@ -838,7 +861,7 @@ int main(void)
                 );
 
                 send_log(
-                    log_queue,
+                    log_fd,
                     "ERROR: Invalid memory address"
                 );
             }
@@ -889,7 +912,7 @@ int main(void)
                 );
 
                 send_log(
-                    log_queue,
+                    log_fd,
                     log_message
                 );
             }
@@ -901,7 +924,7 @@ int main(void)
                 );
 
                 send_log(
-                    log_queue,
+                    log_fd,
                     "ERROR: Invalid memory address"
                 );
             }
@@ -930,7 +953,7 @@ int main(void)
         );
 
         send_log(
-            log_queue,
+            log_fd,
             log_message
         );
     }
@@ -942,7 +965,7 @@ int main(void)
 
     close(ui_socket);
     close(server_socket);
-    mq_close(log_queue);
+    close(log_fd);
 
     unlink(CORE_SOCKET_PATH);
 

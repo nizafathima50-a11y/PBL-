@@ -1,10 +1,10 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -std=c99 -D_POSIX_C_SOURCE=200809L
-LDFLAGS = -lrt
+LDFLAGS =
 
 SRC_DIR = src
 
-ALL = logger core ui launcher standalone
+ALL = logger core ui launcher
 
 all: $(ALL)
 

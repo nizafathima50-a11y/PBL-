@@ -2,8 +2,8 @@
 
 ## What we did
 Split our simulator into three separate processes (UI, Core, Logger) that
-communicate using local sockets and a POSIX Message Queue instead of running as
-one program.
+communicate using a local socket and an unnamed pipe instead of running as one
+program.
 
 ## Team Roles
 | Member | Role | File |
@@ -14,9 +14,9 @@ one program.
 | Niza | Team Leader — Integration | `launcher.c`, `Makefile`, `benchmark.sh` |
 
 ## IPC Mechanism
-The UI sends commands to Core over a Unix-domain stream socket. Core sends log
-messages to Logger over a POSIX Message Queue, and Logger saves them to
-`simulator.log`.
+The UI sends commands to Core over a Unix-domain stream socket. The launcher
+creates an unnamed pipe for one-way log messages from Core to Logger, and Logger
+saves them to `simulator.log`.
 
 ## Commands Supported
 `ADD x y`, `SUB x y`, `MUL x y`, `DIV x y`, `PUSH value`, `POP`,

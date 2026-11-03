@@ -2,37 +2,54 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/wait.h>
-#include <mqueue.h>
-
-#define LOG_QUEUE      "/susurkaddi_log"
-
-void cleanup_log_queue(void) {
-    mq_unlink(LOG_QUEUE);
-}
 
 int main(void) {
     printf("=================================================\n");
     printf("   SusurKaddi MULTI-PROCESS SIMULATOR LAUNCHER   \n");
     printf("=================================================\n");
 
-    cleanup_log_queue();
+    int log_pipe[2];
+    if (pipe(log_pipe) == -1) {
+        perror("LAUNCHER: Cannot create log pipe");
+        return 1;
+    }
 
     // 1. Launch Logger Process FIRST
     pid_t logger_pid = fork();
+    if (logger_pid == -1) {
+        perror("LAUNCHER: Cannot fork logger");
+        close(log_pipe[0]);
+        close(log_pipe[1]);
+        return 1;
+    }
     if (logger_pid == 0) {
-        execl("./logger", "./logger", NULL);
+        close(log_pipe[1]);
+        char read_fd[16];
+        snprintf(read_fd, sizeof(read_fd), "%d", log_pipe[0]);
+        execl("./logger", "./logger", read_fd, NULL);
         perror("LAUNCHER: Failed to exec logger");
         exit(1);
     }
-    sleep(1);
 
     // 2. Launch Core Process SECOND
     pid_t core_pid = fork();
+    if (core_pid == -1) {
+        perror("LAUNCHER: Cannot fork core");
+        close(log_pipe[0]);
+        close(log_pipe[1]);
+        waitpid(logger_pid, NULL, 0);
+        return 1;
+    }
     if (core_pid == 0) {
-        execl("./core", "./core", NULL);
+        close(log_pipe[0]);
+        char write_fd[16];
+        snprintf(write_fd, sizeof(write_fd), "%d", log_pipe[1]);
+        execl("./core", "./core", write_fd, NULL);
         perror("LAUNCHER: Failed to exec core");
         exit(1);
     }
+    close(log_pipe[0]);
+    close(log_pipe[1]);
     sleep(1);
 
     // 3. Launch UI Process THIRD
@@ -47,7 +64,6 @@ int main(void) {
     waitpid(core_pid, NULL, 0);
     waitpid(logger_pid, NULL, 0);
 
-    cleanup_log_queue();
     printf("\nLAUNCHER: All processes terminated successfully.\n");
     return 0;
 }
