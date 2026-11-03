@@ -1,12 +1,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#include <signal.h>
 #include <mqueue.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
 
-#define REQUEST_QUEUE  "/susurkaddi_request"
-#define RESPONSE_QUEUE "/susurkaddi_response"
+#define CORE_SOCKET_PATH "/tmp/susurkaddi_core.sock"
 #define LOG_QUEUE      "/susurkaddi_log"
 
 #define MAX_MSG_SIZE 256
@@ -139,17 +143,94 @@ int cpu_div(int a, int b)
    SEND RESPONSE TO UI
    ========================= */
 
-void send_response(
-    mqd_t response_queue,
-    const char *message
-)
+int send_frame(int socket_fd, const char *message)
 {
-    if (mq_send(
-        response_queue,
-        message,
-        strlen(message) + 1,
-        0
-    ) == -1)
+    char frame[MAX_MSG_SIZE] = {0};
+    size_t message_length = strlen(message);
+
+    if (message_length >= sizeof(frame))
+    {
+        message_length = sizeof(frame) - 1;
+    }
+
+    memcpy(frame, message, message_length);
+
+    size_t sent = 0;
+    while (sent < sizeof(frame))
+    {
+        ssize_t bytes = send(
+            socket_fd,
+            frame + sent,
+            sizeof(frame) - sent,
+            0
+        );
+
+        if (bytes == -1)
+        {
+            if (errno == EINTR)
+            {
+                continue;
+            }
+
+            return -1;
+        }
+
+        if (bytes == 0)
+        {
+            errno = EPIPE;
+            return -1;
+        }
+
+        sent += (size_t)bytes;
+    }
+
+    return 0;
+}
+
+int receive_frame(int socket_fd, char *buffer, size_t buffer_size)
+{
+    size_t received = 0;
+
+    while (received < buffer_size)
+    {
+        ssize_t bytes = recv(
+            socket_fd,
+            buffer + received,
+            buffer_size - received,
+            0
+        );
+
+        if (bytes == 0)
+        {
+            if (received == 0)
+            {
+                return 0;
+            }
+
+            errno = ECONNRESET;
+            return -1;
+        }
+
+        if (bytes == -1)
+        {
+            if (errno == EINTR)
+            {
+                continue;
+            }
+
+            return -1;
+        }
+
+        received += (size_t)bytes;
+    }
+
+    buffer[buffer_size - 1] = '\0';
+    return 1;
+}
+
+void send_response(int response_socket, const char *message)
+{
+    if (send_frame(response_socket, message) == -1)
     {
         perror("CORE: Failed to send response");
     }
@@ -183,58 +264,46 @@ void send_log(
 
 int main(void)
 {
-    struct mq_attr attr;
+    int server_socket = socket(AF_UNIX, SOCK_STREAM, 0);
 
-    attr.mq_flags = 0;
-    attr.mq_maxmsg = 10;
-    attr.mq_msgsize = MAX_MSG_SIZE;
-    attr.mq_curmsgs = 0;
-
-
-    /* =========================
-       REMOVE OLD QUEUES
-       ========================= */
-
-    mq_unlink(REQUEST_QUEUE);
-    mq_unlink(RESPONSE_QUEUE);
-
-
-    /* =========================
-       CREATE REQUEST QUEUE
-       ========================= */
-
-    mqd_t request_queue = mq_open(
-        REQUEST_QUEUE,
-        O_CREAT | O_RDONLY,
-        0666,
-        &attr
-    );
-
-    if (request_queue == (mqd_t)-1)
+    if (server_socket == -1)
     {
-        perror("CORE: Cannot create request queue");
+        perror("CORE: Cannot create socket");
         return 1;
     }
 
-
-    /* =========================
-       CREATE RESPONSE QUEUE
-       ========================= */
-
-    mqd_t response_queue = mq_open(
-        RESPONSE_QUEUE,
-        O_CREAT | O_WRONLY,
-        0666,
-        &attr
-    );
-
-    if (response_queue == (mqd_t)-1)
+    if (
+        unlink(CORE_SOCKET_PATH) == -1 &&
+        errno != ENOENT
+    )
     {
-        perror("CORE: Cannot create response queue");
+        perror("CORE: Cannot remove stale socket");
+        close(server_socket);
+        return 1;
+    }
 
-        mq_close(request_queue);
-        mq_unlink(REQUEST_QUEUE);
+    struct sockaddr_un socket_address;
+    memset(&socket_address, 0, sizeof(socket_address));
+    socket_address.sun_family = AF_UNIX;
+    strcpy(socket_address.sun_path, CORE_SOCKET_PATH);
 
+    if (bind(
+        server_socket,
+        (struct sockaddr *)&socket_address,
+        sizeof(socket_address)
+    ) == -1)
+    {
+        perror("CORE: Cannot bind socket");
+        close(server_socket);
+        unlink(CORE_SOCKET_PATH);
+        return 1;
+    }
+
+    if (listen(server_socket, 1) == -1)
+    {
+        perror("CORE: Cannot listen on socket");
+        close(server_socket);
+        unlink(CORE_SOCKET_PATH);
         return 1;
     }
 
@@ -254,14 +323,13 @@ int main(void)
 
         printf("CORE: Make sure LOGGER is running first.\n");
 
-        mq_close(request_queue);
-        mq_close(response_queue);
-
-        mq_unlink(REQUEST_QUEUE);
-        mq_unlink(RESPONSE_QUEUE);
+        close(server_socket);
+        unlink(CORE_SOCKET_PATH);
 
         return 1;
     }
+
+    signal(SIGPIPE, SIG_IGN);
 
 
     /* =========================
@@ -281,7 +349,20 @@ int main(void)
 
     printf("====================================\n");
 
-    printf("CORE: Waiting for commands...\n");
+    printf("CORE: Waiting for UI connection...\n");
+
+    int ui_socket = accept(server_socket, NULL, NULL);
+
+    if (ui_socket == -1)
+    {
+        perror("CORE: Failed to accept UI connection");
+        mq_close(log_queue);
+        close(server_socket);
+        unlink(CORE_SOCKET_PATH);
+        return 1;
+    }
+
+    printf("CORE: UI connected. Waiting for commands...\n");
 
 
     /* =========================
@@ -297,20 +378,22 @@ int main(void)
 
     while (1)
     {
-        ssize_t bytes = mq_receive(
-            request_queue,
+        int frame_status = receive_frame(
+            ui_socket,
             message,
-            MAX_MSG_SIZE,
-            NULL
+            sizeof(message)
         );
 
-        if (bytes == -1)
+        if (frame_status == -1)
         {
-            perror("CORE: mq_receive");
+            perror("CORE: Failed to receive command");
             break;
         }
 
-        message[bytes] = '\0';
+        if (frame_status == 0)
+        {
+            break;
+        }
 
         printf("\nCORE received: %s\n", message);
 
@@ -322,7 +405,7 @@ int main(void)
         if (strcmp(message, "exit") == 0)
         {
             send_response(
-                response_queue,
+                ui_socket,
                 "Core shutting down"
             );
 
@@ -362,7 +445,7 @@ int main(void)
             );
 
             send_response(
-                response_queue,
+                ui_socket,
                 response
             );
 
@@ -410,7 +493,7 @@ int main(void)
             );
 
             send_response(
-                response_queue,
+                ui_socket,
                 response
             );
 
@@ -458,7 +541,7 @@ int main(void)
             );
 
             send_response(
-                response_queue,
+                ui_socket,
                 response
             );
 
@@ -497,7 +580,7 @@ int main(void)
             if (b == 0)
             {
                 send_response(
-                    response_queue,
+                    ui_socket,
                     "ERROR: Division by zero"
                 );
 
@@ -520,7 +603,7 @@ int main(void)
                 );
 
                 send_response(
-                    response_queue,
+                    ui_socket,
                     response
                 );
 
@@ -562,7 +645,7 @@ int main(void)
             push(value);
 
             send_response(
-                response_queue,
+                ui_socket,
                 "Value pushed to stack"
             );
 
@@ -603,7 +686,7 @@ int main(void)
             );
 
             send_response(
-                response_queue,
+                ui_socket,
                 response
             );
 
@@ -639,7 +722,7 @@ int main(void)
             enqueue(value);
 
             send_response(
-                response_queue,
+                ui_socket,
                 "Value added to queue"
             );
 
@@ -680,7 +763,7 @@ int main(void)
             );
 
             send_response(
-                response_queue,
+                ui_socket,
                 response
             );
 
@@ -725,7 +808,7 @@ int main(void)
                 memory[address] = value;
 
                 send_response(
-                    response_queue,
+                    ui_socket,
                     "Value stored in memory"
                 );
 
@@ -748,7 +831,7 @@ int main(void)
             else
             {
                 send_response(
-                    response_queue,
+                    ui_socket,
                     "ERROR: Invalid memory address"
                 );
 
@@ -788,7 +871,7 @@ int main(void)
                 );
 
                 send_response(
-                    response_queue,
+                    ui_socket,
                     response
                 );
 
@@ -811,7 +894,7 @@ int main(void)
             else
             {
                 send_response(
-                    response_queue,
+                    ui_socket,
                     "ERROR: Invalid memory address"
                 );
 
@@ -830,7 +913,7 @@ int main(void)
            ========================= */
 
         send_response(
-            response_queue,
+            ui_socket,
             "ERROR: Unknown command"
         );
 
@@ -855,12 +938,11 @@ int main(void)
        CLEANUP
        ========================= */
 
-    mq_close(request_queue);
-    mq_close(response_queue);
+    close(ui_socket);
+    close(server_socket);
     mq_close(log_queue);
 
-    mq_unlink(REQUEST_QUEUE);
-    mq_unlink(RESPONSE_QUEUE);
+    unlink(CORE_SOCKET_PATH);
 
     printf("\nCORE: Shutdown complete.\n");
 

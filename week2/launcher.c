@@ -4,13 +4,9 @@
 #include <sys/wait.h>
 #include <mqueue.h>
 
-#define REQUEST_QUEUE  "/susurkaddi_request"
-#define RESPONSE_QUEUE "/susurkaddi_response"
 #define LOG_QUEUE      "/susurkaddi_log"
 
-void cleanup_queues(void) {
-    mq_unlink(REQUEST_QUEUE);
-    mq_unlink(RESPONSE_QUEUE);
+void cleanup_log_queue(void) {
     mq_unlink(LOG_QUEUE);
 }
 
@@ -19,7 +15,7 @@ int main(void) {
     printf("   SusurKaddi MULTI-PROCESS SIMULATOR LAUNCHER   \n");
     printf("=================================================\n");
 
-    cleanup_queues();
+    cleanup_log_queue();
 
     // 1. Launch Logger Process FIRST
     pid_t logger_pid = fork();
@@ -51,7 +47,7 @@ int main(void) {
     waitpid(core_pid, NULL, 0);
     waitpid(logger_pid, NULL, 0);
 
-    cleanup_queues();
+    cleanup_log_queue();
     printf("\nLAUNCHER: All processes terminated successfully.\n");
     return 0;
 }
