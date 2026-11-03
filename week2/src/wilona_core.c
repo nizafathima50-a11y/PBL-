@@ -1,4 +1,4 @@
-#wilona
+// wilona
 
 #include <stdio.h>
 #include <stdlib.h>
