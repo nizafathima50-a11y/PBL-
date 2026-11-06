@@ -3,9 +3,7 @@
 
 #include <stddef.h>
 
-/*
- * Validate the resource state and current outstanding requests.
- */
+/* Validate the resource totals and allocation/maximum matrices. */
 static bool valid_state(const SystemState *state)
 {
     if (state == NULL ||
@@ -28,13 +26,10 @@ static bool valid_state(const SystemState *state)
         for (int j = 0; j < state->resource_count; j++) {
             int allocation = state->allocation[i][j];
             int maximum = state->maximum[i][j];
-            int request = state->request[i][j];
 
             if (allocation < 0 ||
                 maximum < 0 ||
-                request < 0 ||
-                allocation > maximum ||
-                request > state->total[j]) {
+                allocation > maximum) {
                 return false;
             }
 
@@ -50,17 +45,18 @@ static bool valid_state(const SystemState *state)
 }
 
 /*
- * Deadlock detection algorithm:
+ * Need-based completion-feasibility check:
  * 1. Work = Available.
- * 2. Processes holding no resources are initially finished.
- * 3. Find an unfinished process whose current request <= Work.
- * 4. Assume it finishes and releases its allocation.
- * 5. Any process still unfinished is deadlocked.
+ * 2. Find an unfinished process whose Need <= Work.
+ * 3. Assume it finishes and releases its allocation.
+ * 4. Any process still unfinished cannot be shown to finish in this order.
+ *
+ * This is a safety check, not proof of a runtime deadlock.
  *
  * Returns:
  *   -1 = invalid state
- *    0 = no deadlocked processes
- *   >0 = number of deadlocked processes
+ *    0 = all processes can finish
+ *   >0 = number of processes that cannot be shown to finish
  */
 int detect_deadlock(
     SystemState *state,
@@ -86,23 +82,6 @@ int detect_deadlock(
         work[j] = state->available[j];
     }
 
-    /*
-     * A process holding no resources cannot be part of a
-     * resource-allocation deadlock under this algorithm.
-     */
-    for (int i = 0; i < state->process_count; i++) {
-        bool holds_resources = false;
-
-        for (int j = 0; j < state->resource_count; j++) {
-            if (state->allocation[i][j] > 0) {
-                holds_resources = true;
-                break;
-            }
-        }
-
-        finished[i] = !holds_resources;
-    }
-
     bool progress;
 
     do {
@@ -116,7 +95,7 @@ int detect_deadlock(
             bool can_finish = true;
 
             for (int j = 0; j < state->resource_count; j++) {
-                if (state->request[i][j] > work[j]) {
+                if (state->need[i][j] > work[j]) {
                     can_finish = false;
                     break;
                 }
@@ -148,9 +127,9 @@ int detect_deadlock(
 }
 
 /*
- * Recover only if the selected process is currently deadlocked.
- * Recovery releases its allocated resources and clears its
- * outstanding request.
+ * Release resources only for a process unable to finish according to the
+ * need-based feasibility check. This is a simulator action, not runtime
+ * deadlock recovery.
  */
 bool recover_from_deadlock(
     SystemState *state,
@@ -191,4 +170,3 @@ bool recover_from_deadlock(
 
     return calculate_need(state);
 }
-

@@ -1,5 +1,6 @@
 #include "gui.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,11 +13,186 @@ static GtkWidget *recovery_entry;
 static GtkWidget *total_entry[MAX_RESOURCES];
 static GtkWidget *allocation_entry[MAX_PROCESSES][MAX_RESOURCES];
 static GtkWidget *maximum_entry[MAX_PROCESSES][MAX_RESOURCES];
+static GtkWidget *request_process_entry;
+static GtkWidget *request_entry[MAX_RESOURCES];
 static GtkWidget *matrix_box;
 static GtkWidget *output_view;
+static GtkWidget *main_window;
 
 static int configured = 0;
 static int data_applied = 0;
+
+static void request_resources_clicked(
+    GtkButton *button,
+    gpointer user_data
+);
+
+static void draw_arrow(
+    cairo_t *cr,
+    double x1,
+    double y1,
+    double x2,
+    double y2,
+    double red,
+    double green,
+    double blue,
+    const char *label
+)
+{
+    double angle = atan2(y2 - y1, x2 - x1);
+    const double arrow_length = 9.0;
+    const double arrow_angle = 0.45;
+
+    cairo_set_source_rgb(cr, red, green, blue);
+    cairo_set_line_width(cr, 2.0);
+    cairo_move_to(cr, x1, y1);
+    cairo_line_to(cr, x2, y2);
+    cairo_stroke(cr);
+
+    cairo_move_to(cr, x2, y2);
+    cairo_line_to(
+        cr,
+        x2 - arrow_length * cos(angle - arrow_angle),
+        y2 - arrow_length * sin(angle - arrow_angle)
+    );
+    cairo_line_to(
+        cr,
+        x2 - arrow_length * cos(angle + arrow_angle),
+        y2 - arrow_length * sin(angle + arrow_angle)
+    );
+    cairo_close_path(cr);
+    cairo_fill(cr);
+
+    cairo_set_font_size(cr, 12.0);
+    cairo_move_to(cr, (x1 + x2) / 2.0, (y1 + y2) / 2.0 - 4.0);
+    cairo_show_text(cr, label);
+}
+
+static void draw_resource_graph(
+    GtkDrawingArea *area,
+    cairo_t *cr,
+    int width,
+    int height,
+    gpointer user_data
+)
+{
+    const double process_x = 110.0;
+    const double resource_x = width - 125.0;
+    const double process_radius = 23.0;
+    const double resource_half_width = 58.0;
+    const double top = 72.0;
+    const double bottom = 48.0;
+    char label[80];
+
+    (void)area;
+    (void)user_data;
+
+    cairo_set_source_rgb(cr, 0.15, 0.15, 0.15);
+    cairo_set_font_size(cr, 14.0);
+    cairo_move_to(cr, process_x - 35.0, 30.0);
+    cairo_show_text(cr, "Processes");
+    cairo_move_to(cr, resource_x - 85.0, 30.0);
+    cairo_show_text(cr, "Resources (available / total)");
+
+    for (int i = 0; i < state.process_count; i++) {
+        double process_y = top +
+            (i + 0.5) * (height - top - bottom) / state.process_count;
+
+        for (int j = 0; j < state.resource_count; j++) {
+            double resource_y = top +
+                (j + 0.5) * (height - top - bottom) /
+                state.resource_count;
+
+            if (state.allocation[i][j] > 0) {
+                snprintf(
+                    label,
+                    sizeof(label),
+                    "%d",
+                    state.allocation[i][j]
+                );
+                draw_arrow(
+                    cr,
+                    resource_x - resource_half_width,
+                    resource_y - 5.0,
+                    process_x + process_radius,
+                    process_y - 5.0,
+                    0.12, 0.38, 0.72,
+                    label
+                );
+            }
+
+            if (state.request[i][j] > 0) {
+                snprintf(label, sizeof(label), "%d", state.request[i][j]);
+                draw_arrow(
+                    cr,
+                    process_x + process_radius,
+                    process_y + 5.0,
+                    resource_x - resource_half_width,
+                    resource_y + 5.0,
+                    0.82, 0.35, 0.12,
+                    label
+                );
+            }
+        }
+    }
+
+    for (int i = 0; i < state.process_count; i++) {
+        double process_y = top +
+            (i + 0.5) * (height - top - bottom) / state.process_count;
+
+        cairo_set_source_rgb(cr, 0.88, 0.93, 0.99);
+        cairo_arc(cr, process_x, process_y, process_radius, 0.0, 2.0 * G_PI);
+        cairo_fill_preserve(cr);
+        cairo_set_source_rgb(cr, 0.12, 0.30, 0.52);
+        cairo_set_line_width(cr, 2.0);
+        cairo_stroke(cr);
+
+        snprintf(label, sizeof(label), "P%d", i);
+        cairo_set_source_rgb(cr, 0.10, 0.10, 0.10);
+        cairo_set_font_size(cr, 13.0);
+        cairo_move_to(cr, process_x - 11.0, process_y + 5.0);
+        cairo_show_text(cr, label);
+    }
+
+    for (int j = 0; j < state.resource_count; j++) {
+        double resource_y = top +
+            (j + 0.5) * (height - top - bottom) / state.resource_count;
+
+        cairo_set_source_rgb(cr, 0.91, 0.96, 0.88);
+        cairo_rectangle(
+            cr,
+            resource_x - resource_half_width,
+            resource_y - 22.0,
+            2.0 * resource_half_width,
+            44.0
+        );
+        cairo_fill_preserve(cr);
+        cairo_set_source_rgb(cr, 0.25, 0.48, 0.18);
+        cairo_set_line_width(cr, 2.0);
+        cairo_stroke(cr);
+
+        snprintf(
+            label,
+            sizeof(label),
+            "R%d (%d/%d)",
+            j,
+            state.available[j],
+            state.total[j]
+        );
+        cairo_set_source_rgb(cr, 0.10, 0.10, 0.10);
+        cairo_set_font_size(cr, 13.0);
+        cairo_move_to(cr, resource_x - 38.0, resource_y + 5.0);
+        cairo_show_text(cr, label);
+    }
+
+    cairo_set_source_rgb(cr, 0.12, 0.38, 0.72);
+    cairo_set_font_size(cr, 12.0);
+    cairo_move_to(cr, 20.0, height - 14.0);
+    cairo_show_text(cr, "Blue: allocated resource -> process");
+    cairo_set_source_rgb(cr, 0.82, 0.35, 0.12);
+    cairo_move_to(cr, width / 2.0, height - 14.0);
+    cairo_show_text(cr, "Orange: outstanding process -> resource request");
+}
 
 static void show_message(const char *message)
 {
@@ -233,6 +409,61 @@ static void configure_system(GtkButton *button, gpointer user_data)
 
     gtk_box_append(GTK_BOX(matrix_box), maximum_grid);
 
+    gtk_box_append(
+        GTK_BOX(matrix_box),
+        make_section_label("Request Resources")
+    );
+
+    GtkWidget *request_grid = gtk_grid_new();
+    gtk_grid_set_row_spacing(GTK_GRID(request_grid), 5);
+    gtk_grid_set_column_spacing(GTK_GRID(request_grid), 8);
+
+    gtk_box_append(
+        GTK_BOX(matrix_box),
+        request_grid
+    );
+
+    gtk_grid_attach(
+        GTK_GRID(request_grid),
+        gtk_label_new("Process ID (e.g. 0 for P0):"),
+        0, 0, 1, 1
+    );
+    request_process_entry = make_entry("0");
+    gtk_grid_attach(
+        GTK_GRID(request_grid),
+        request_process_entry,
+        1, 0, 1, 1
+    );
+
+    for (int j = 0; j < resources; j++) {
+        snprintf(label_text, sizeof(label_text), "R%d:", j);
+        gtk_grid_attach(
+            GTK_GRID(request_grid),
+            gtk_label_new(label_text),
+            j, 1, 1, 1
+        );
+        request_entry[j] = make_entry("0");
+        gtk_grid_attach(
+            GTK_GRID(request_grid),
+            request_entry[j],
+            j, 2, 1, 1
+        );
+    }
+
+    GtkWidget *request_button =
+        gtk_button_new_with_label("Submit Request");
+    g_signal_connect(
+        request_button,
+        "clicked",
+        G_CALLBACK(request_resources_clicked),
+        NULL
+    );
+    gtk_grid_attach(
+        GTK_GRID(request_grid),
+        request_button,
+        0, 3, resources, 1
+    );
+
     configured = 1;
     data_applied = 0;
 
@@ -310,10 +541,167 @@ static bool apply_data(void)
     show_message(
         "Data applied successfully.\n\n"
         "The system data is valid. You can now calculate Need and "
-        "Available, check the safe sequence, or detect deadlock."
+        "Available, check the safe sequence, or check whether all "
+        "processes can finish."
     );
 
     return true;
+}
+
+static void show_resource_graph_clicked(
+    GtkButton *button,
+    gpointer user_data
+)
+{
+    GtkWidget *window;
+    GtkWidget *layout;
+    GtkWidget *drawing_area;
+    GtkWidget *scroller;
+    GtkWidget *note;
+    int graph_height;
+
+    (void)button;
+    (void)user_data;
+
+    if (!data_applied && !apply_data()) {
+        return;
+    }
+
+    window = gtk_window_new();
+    gtk_window_set_title(GTK_WINDOW(window), "Resource Allocation Graph");
+    gtk_window_set_default_size(GTK_WINDOW(window), 850, 620);
+    gtk_window_set_transient_for(GTK_WINDOW(window), GTK_WINDOW(main_window));
+
+    layout = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_widget_set_margin_top(layout, 12);
+    gtk_widget_set_margin_bottom(layout, 12);
+    gtk_widget_set_margin_start(layout, 12);
+    gtk_widget_set_margin_end(layout, 12);
+
+    note = gtk_label_new(
+        "Allocation arrows point from a resource to a process. Request "
+        "arrows point from a process to a resource. Resource labels show "
+        "available / total instances."
+    );
+    gtk_label_set_wrap(GTK_LABEL(note), true);
+    gtk_widget_set_halign(note, GTK_ALIGN_START);
+    gtk_box_append(GTK_BOX(layout), note);
+
+    scroller = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(
+        GTK_SCROLLED_WINDOW(scroller),
+        GTK_POLICY_AUTOMATIC,
+        GTK_POLICY_AUTOMATIC
+    );
+
+    drawing_area = gtk_drawing_area_new();
+    graph_height = (state.process_count > state.resource_count
+        ? state.process_count
+        : state.resource_count) * 58 + 130;
+    gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(drawing_area), 820);
+    gtk_drawing_area_set_content_height(
+        GTK_DRAWING_AREA(drawing_area),
+        graph_height
+    );
+    gtk_drawing_area_set_draw_func(
+        GTK_DRAWING_AREA(drawing_area),
+        draw_resource_graph,
+        NULL,
+        NULL
+    );
+    gtk_scrolled_window_set_child(
+        GTK_SCROLLED_WINDOW(scroller),
+        drawing_area
+    );
+    gtk_widget_set_vexpand(scroller, true);
+    gtk_box_append(GTK_BOX(layout), scroller);
+
+    gtk_window_set_child(GTK_WINDOW(window), layout);
+    gtk_window_present(GTK_WINDOW(window));
+}
+
+static void request_resources_clicked(
+    GtkButton *button,
+    gpointer user_data
+)
+{
+    int process_id;
+    int request[MAX_RESOURCES] = {0};
+    char output[2048];
+    size_t used = 0;
+
+    (void)button;
+    (void)user_data;
+
+    if (!configured) {
+        show_message("Configure the system before submitting a request.");
+        return;
+    }
+
+    if (!data_applied && !apply_data()) {
+        return;
+    }
+
+    if (!read_integer(request_process_entry, &process_id) ||
+        process_id >= state.process_count) {
+        show_message(
+            "Invalid process ID.\n\n"
+            "Enter a process number from 0 to the configured process count "
+            "minus one."
+        );
+        return;
+    }
+
+    for (int j = 0; j < state.resource_count; j++) {
+        if (!read_integer(request_entry[j], &request[j])) {
+            show_message(
+                "Invalid resource request.\n\n"
+                "Enter a non-negative whole number for every resource."
+            );
+            return;
+        }
+    }
+
+    if (!request_resources(&state, process_id, request)) {
+        show_message(
+            "Request denied.\n\n"
+            "The request is invalid, exceeds the process's remaining need "
+            "or available resources, or would leave the system unsafe. "
+            "No resources were allocated."
+        );
+        return;
+    }
+
+    for (int j = 0; j < state.resource_count; j++) {
+        char value[32];
+        snprintf(value, sizeof(value), "%d", state.allocation[process_id][j]);
+        gtk_editable_set_text(
+            GTK_EDITABLE(allocation_entry[process_id][j]),
+            value
+        );
+    }
+
+    used += (size_t)snprintf(
+        output + used,
+        sizeof(output) - used,
+        "REQUEST GRANTED\n\n"
+        "P%d's request was granted and the system remains safe.\n"
+        "Updated available resources:\n",
+        process_id
+    );
+
+    for (int j = 0; j < state.resource_count; j++) {
+        used += (size_t)snprintf(
+            output + used,
+            sizeof(output) - used,
+            "R%d: %d%s",
+            j,
+            state.available[j],
+            j == state.resource_count - 1 ? "\n" : "   "
+        );
+    }
+
+    show_message(output);
 }
 
 static void apply_data_clicked(
@@ -474,10 +862,19 @@ static void deadlock_clicked(
 
     count = detect_deadlock(&state, deadlocked);
 
-    if (count <= 0) {
+    if (count < 0) {
         show_message(
-            "DEADLOCK DETECTION\n\n"
-            "No deadlocked processes were detected."
+            "COMPLETION FEASIBILITY CHECK\n\n"
+            "The resource state is invalid, so the check could not run."
+        );
+        return;
+    }
+
+    if (count == 0) {
+        show_message(
+            "COMPLETION FEASIBILITY CHECK\n\n"
+            "All processes can finish in a safe order. This does not "
+            "test for runtime deadlock."
         );
         return;
     }
@@ -485,8 +882,10 @@ static void deadlock_clicked(
     used += (size_t)snprintf(
         output + used,
         sizeof(output) - used,
-        "DEADLOCK DETECTION\n\n"
-        "Deadlocked processes detected: %d\n\n",
+        "COMPLETION FEASIBILITY CHECK\n\n"
+        "Processes that cannot be shown to finish: %d\n\n"
+        "This indicates an unsafe state, not necessarily a runtime "
+        "deadlock.\n\n",
         count
     );
 
@@ -495,7 +894,7 @@ static void deadlock_clicked(
             used += (size_t)snprintf(
                 output + used,
                 sizeof(output) - used,
-                "P%d is deadlocked.\n",
+                "P%d cannot currently be shown to finish.\n",
                 i
             );
         }
@@ -536,8 +935,10 @@ static void recovery_clicked(
             output,
             sizeof(output),
             "RECOVERY SUCCESSFUL\n\n"
-            "Resources held by P%d have been released.\n"
+            "Resources held by P%d have been released by the simulator.\n"
             "Available resources and Need values have been recalculated.\n\n"
+            "This is a simulated recovery from an unsafe state, not "
+            "termination of the process.\n\n"
             "Click 'Need / Available' or 'Check Safe State' "
             "to inspect the updated system.",
             process_id
@@ -569,6 +970,7 @@ void gui_activate(GtkApplication *app, gpointer user_data)
     (void)user_data;
 
     window = gtk_application_window_new(app);
+    main_window = window;
     gtk_window_set_title(
         GTK_WINDOW(window),
         "Deadlock Simulation System"
@@ -588,7 +990,8 @@ void gui_activate(GtkApplication *app, gpointer user_data)
 
     description = gtk_label_new(
         "Configure processes and resources, calculate Need and Available, "
-        "check system safety, detect deadlocks, and recover resources."
+        "check whether all processes can finish, and simulate resource "
+        "release from an unsafe state."
     );
     gtk_label_set_wrap(GTK_LABEL(description), true);
     gtk_widget_set_halign(description, GTK_ALIGN_START);
@@ -668,11 +1071,20 @@ void gui_activate(GtkApplication *app, gpointer user_data)
     );
     gtk_box_append(GTK_BOX(button_box), button);
 
-    button = gtk_button_new_with_label("Detect Deadlock");
+    button = gtk_button_new_with_label("Check Completion Feasibility");
     g_signal_connect(
         button,
         "clicked",
         G_CALLBACK(deadlock_clicked),
+        NULL
+    );
+    gtk_box_append(GTK_BOX(button_box), button);
+
+    button = gtk_button_new_with_label("Show Resource Allocation Graph");
+    g_signal_connect(
+        button,
+        "clicked",
+        G_CALLBACK(show_resource_graph_clicked),
         NULL
     );
     gtk_box_append(GTK_BOX(button_box), button);
@@ -683,7 +1095,7 @@ void gui_activate(GtkApplication *app, gpointer user_data)
 
     gtk_box_append(
         GTK_BOX(recovery_box),
-        gtk_label_new("Process ID to recover (e.g. 0 for P0):")
+        gtk_label_new("Process ID to release resources from (e.g. 0 for P0):")
     );
 
     recovery_entry = make_entry("0");
@@ -730,7 +1142,9 @@ void gui_activate(GtkApplication *app, gpointer user_data)
         "2. Click Configure System.\n"
         "3. Enter resource totals, allocations and maximum demands.\n"
         "4. Click Apply Data.\n"
-        "5. Run the simulation buttons to inspect the results.\n\n"
+        "5. Enter a process ID and resource request, then click "
+        "Submit Request to ask the Banker's Algorithm to grant or deny it.\n"
+        "6. Run the simulation buttons to inspect the results.\n\n"
         "Process IDs start at P0."
     );
 

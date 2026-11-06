@@ -10,7 +10,7 @@ static void set_up_state(SystemState *state, int process_count, int resource_cou
     state->resource_count = resource_count;
 }
 
-static void test_no_deadlock(void)
+static void test_all_processes_can_finish(void)
 {
     SystemState state;
     bool deadlocked[MAX_PROCESSES];
@@ -29,7 +29,7 @@ static void test_no_deadlock(void)
     assert(state.allocation[1][0] == 1);
 }
 
-static void test_need_based_feasibility_failure(void)
+static void test_need_based_check_ignores_current_requests(void)
 {
     SystemState state;
     bool deadlocked[MAX_PROCESSES];
@@ -40,6 +40,8 @@ static void test_need_based_feasibility_failure(void)
     state.allocation[1][0] = 1;
     state.maximum[0][0] = 2;
     state.maximum[1][0] = 2;
+    state.request[0][0] = 0;
+    state.request[1][0] = 0;
 
     assert(detect_deadlock(&state, deadlocked) == 2);
     assert(deadlocked[0] && deadlocked[1]);
@@ -63,7 +65,7 @@ static void test_multiple_resources_and_zero_allocation(void)
     assert(!deadlocked[0] && !deadlocked[1]);
 }
 
-static void test_recovery_releases_resources(void)
+static void test_recovery_releases_resources_from_unfinishable_process(void)
 {
     SystemState state;
     set_up_state(&state, 2, 1);
@@ -106,23 +108,23 @@ static void test_invalid_state_is_rejected_without_mutation(void)
     state.maximum[0][0] = 2;
     deadlocked[0] = true;
 
-    assert(detect_deadlock(&state, deadlocked) == 0);
+    assert(detect_deadlock(&state, deadlocked) == -1);
     assert(!deadlocked[0]);
     assert(!recover_from_deadlock(&state, 0));
     assert(state.allocation[0][0] == 2);
 
     state.allocation[0][0] = 0;
     state.resource_count = MAX_RESOURCES + 1;
-    assert(detect_deadlock(&state, deadlocked) == 0);
+    assert(detect_deadlock(&state, deadlocked) == -1);
     assert(!recover_from_deadlock(&state, 0));
 }
 
 int main(void)
 {
-    test_no_deadlock();
-    test_need_based_feasibility_failure();
+    test_all_processes_can_finish();
+    test_need_based_check_ignores_current_requests();
     test_multiple_resources_and_zero_allocation();
-    test_recovery_releases_resources();
+    test_recovery_releases_resources_from_unfinishable_process();
     test_recovery_rejects_bad_process_ids_and_empty_allocation();
     test_invalid_state_is_rejected_without_mutation();
 
